@@ -124,15 +124,6 @@ export function ChatPageClient() {
     setSidebarRefreshKey((k) => k + 1);
   }, []);
 
-  // ─── Loading state ───
-  if (mode === "loading") {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
   // ─── Render ───
   return (
     <div className="flex h-screen flex-col">
@@ -156,7 +147,11 @@ export function ChatPageClient() {
         />
 
         <div className="flex-1">
-          {mode === "new" ? (
+          {mode === "loading" ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            </div>
+          ) : mode === "new" ? (
             <ChatInterface
               key="new-chat"
               pendingMessage={pendingMessage ?? undefined}
