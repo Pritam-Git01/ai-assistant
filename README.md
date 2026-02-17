@@ -159,25 +159,7 @@ Used for all database operations (creating chats, saving messages, loading chat 
 
 The AI assistant uses Vercel AI SDK's `streamText` with `tools` parameter. When the model determines a tool should be called based on the user's message, it generates a tool call that executes server-side and returns structured data rendered in custom UI cards.
 
-## Deployment
 
-Deploy to Vercel:
-
-```bash
-npm i -g vercel
-vercel
-```
-
-Make sure to set all environment variables in your Vercel project settings.
-
-## shadcn/ui Components
-
-The project uses shadcn/ui components. If you need to add them via CLI:
-
-```bash
-npx shadcn@latest init
-npx shadcn@latest add button card avatar scroll-area separator
-```
 
 ## License
 
