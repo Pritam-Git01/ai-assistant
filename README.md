@@ -70,7 +70,7 @@ src/
 ### 1. Clone and Install
 
 ```bash
-git clone [<your-repo-url>](https://github.com/Pritam-Git01/ai-assistant.git/)
+git clone https://github.com/Pritam-Git01/ai-assistant.git
 cd ai-assistant
 npm install
 ```
