@@ -23,7 +23,7 @@ export default async function LoginPage() {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
             <Bot className="h-7 w-7 text-primary" />
           </div>
-          <CardTitle className="text-2xl">Welcome Back</CardTitle>
+          <CardTitle className="text-2xl">Welcome</CardTitle>
           <CardDescription>
             Sign in to access your AI assistant with real-world tools
           </CardDescription>

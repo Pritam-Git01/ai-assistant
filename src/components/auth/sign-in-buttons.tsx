@@ -18,7 +18,7 @@ export function SignInButtons() {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 my-6">
       <Button
         variant="outline"
         size="lg"
@@ -51,7 +51,7 @@ export function SignInButtons() {
         Continue with Google
       </Button>
 
-      <Button
+      {/* <Button
         variant="outline"
         size="lg"
         onClick={() => handleSignIn("github")}
@@ -66,7 +66,7 @@ export function SignInButtons() {
           </svg>
         )}
         Continue with GitHub
-      </Button>
+      </Button> */}
     </div>
   );
 }

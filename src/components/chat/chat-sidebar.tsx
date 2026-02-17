@@ -99,24 +99,22 @@ export function ChatSidebar({
     <div className="flex h-full w-66 flex-col border-r bg-muted/30">
       {/* Header */}
       <div className="flex items-center justify-between p-3">
-        <h2 className="text-sm font-semibold">Chat History</h2>
+        <h2 className="text-base font-semibold">Chat History</h2>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
+          <button
+           
             onClick={onNewChat}
-            className="h-8 w-8"
+            className="size-9 cursor-pointer hover:bg-accent rounded-lg flex items-center justify-center"
           >
-            <MessageSquarePlus className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
+            <MessageSquarePlus className="size-5" />
+          </button>
+          <button
+          
             onClick={() => setIsCollapsed(true)}
-            className="h-8 w-8"
+            className="size-9 cursor-pointer hover:bg-accent rounded-lg flex items-center justify-center"
           >
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
+            <PanelLeftClose className="size-5" />
+          </button>
         </div>
       </div>
 
