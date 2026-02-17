@@ -8,7 +8,7 @@ import { z } from "zod";
 export const getWeather = tool({
   description:
     "Get the current weather for a given location. Use this when a user asks about weather conditions, temperature, humidity, etc.",
-  parameters: z.object({
+  inputSchema: z.object({
     location: z
       .string()
       .describe("The city name to get weather for, e.g. 'London', 'New York', 'Tokyo'"),
@@ -67,12 +67,12 @@ export const getWeather = tool({
 export const getF1Matches = tool({
   description:
     "Get information about the next upcoming Formula 1 race or the current F1 season schedule. Use this when a user asks about F1 races, Grand Prix, or Formula 1.",
-  parameters: z.object({}),
+  inputSchema: z.object({}),
   execute: async () => {
     try {
       // Get current season schedule
       const currentYear = new Date().getFullYear();
-      const url = `https://ergast.com/api/f1/${currentYear}.json`;
+      const url = `https://api.jolpi.ca/ergast/f1/${currentYear}.json`;
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -134,7 +134,7 @@ export const getF1Matches = tool({
 export const getStockPrice = tool({
   description:
     "Get the current stock price for a given stock symbol/ticker. Use this when a user asks about stock prices, market data, or share prices.",
-  parameters: z.object({
+  inputSchema: z.object({
     symbol: z
       .string()
       .describe("The stock ticker symbol, e.g. 'AAPL', 'GOOGL', 'MSFT', 'TSLA'"),

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { ArrowUp, SendHorizontal } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { useRef, useEffect } from "react";
 
 interface ChatInputProps {
@@ -40,7 +40,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="border-t bg-background p-4">
+    <div className="bg-background p-4">
       <form
         onSubmit={handleSubmit}
         className="mx-auto relative flex max-w-3xl items-end gap-2"
@@ -54,7 +54,7 @@ export function ChatInput({
             placeholder="Ask me about weather, F1 races, or stock prices..."
             rows={3}
             disabled={isLoading}
-            className="w-full min-h-20 resize-none rounded-2xl border bg-muted/50 px-4 py-3 pr-12 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            className="w-full min-h-24 resize-none rounded-2xl border bg-muted/50 px-4 py-3 pr-12 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           />
         </div>
         <Button

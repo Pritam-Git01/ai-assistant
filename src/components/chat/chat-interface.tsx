@@ -12,158 +12,219 @@ import type { UIMessage } from "ai";
 interface ChatInterfaceProps {
   chatId?: string;
   initialMessages?: DBMessage[];
+  pendingMessage?: string;
   onChatCreated?: (chatId: string) => void;
 }
 
-/**
- * Convert persisted DB messages into the UIMessage format expected by AI SDK v6.
- * v6 uses `parts` array instead of flat `content` / `toolInvocations`.
- */
 function dbMessagesToUIMessages(dbMessages: DBMessage[]): UIMessage[] {
   return dbMessages.map((msg) => {
     const parts: UIMessage["parts"] = [];
 
-    if (msg.content) {
-      parts.push({ type: "text" as const, text: msg.content });
+    const safeContent =
+      typeof msg.content === "string" &&
+        msg.content.trim() !== "" &&
+        msg.content !== "0"
+        ? msg.content
+        : "";
+
+    if (safeContent) {
+      parts.push({ type: "text", text: safeContent });
     }
 
     if (msg.toolInvocations) {
       try {
         const invocations = JSON.parse(msg.toolInvocations);
-        for (const inv of invocations) {
-          parts.push(inv);
+        if (Array.isArray(invocations)) {
+          parts.push(...invocations);
         }
       } catch {
-        // Ignore malformed JSON
+        console.error("Failed to parse toolInvocations");
       }
     }
 
     return {
       id: msg.id,
       role: msg.role as "user" | "assistant",
+      content: safeContent,
       parts,
       createdAt: msg.createdAt,
-    } as UIMessage;
+    };
   });
 }
 
 export function ChatInterface({
   chatId: initialChatId,
   initialMessages,
+  pendingMessage,
   onChatCreated,
 }: ChatInterfaceProps) {
-  const [currentChatId, setCurrentChatId] = useState<string | undefined>(initialChatId);
+  const [currentChatId, setCurrentChatId] = useState<string | undefined>(
+    initialChatId
+  );
   const [input, setInput] = useState("");
-  const chatCreatedRef = useRef(false);
+
   const savedMessagesRef = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hasSentPendingRef = useRef(false);
+  const hasSetInitialRef = useRef(false);
 
-  const formattedInitialMessages = initialMessages
-    ? dbMessagesToUIMessages(initialMessages)
-    : [];
-
-  const { messages, sendMessage, status, error } = useChat({
-    api: "/api/chat",
-    initialMessages: formattedInitialMessages,
-    onFinish: async (message) => {
-      if (!currentChatId || savedMessagesRef.current.has(message.id)) return;
-      savedMessagesRef.current.add(message.id);
-
-      // Safely handle parts — it can be undefined in some edge cases
-      const parts = message.parts ?? [];
-
-      const textContent = parts
-        .filter((p): p is { type: "text"; text: string } => p.type === "text")
-        .map((p) => p.text)
-        .join("");
-
-      const toolParts = parts.filter(
-        (p) => p.type !== "text" && p.type !== "reasoning"
-      );
-      const toolInvocationsJson =
-        toolParts.length > 0 ? JSON.stringify(toolParts) : undefined;
-
-      await saveMessage(
-        currentChatId,
-        "assistant",
-        textContent,
-        toolInvocationsJson
-      );
-    },
-  });
+  const { messages, sendMessage, setMessages, status, error } = useChat();
 
   const isLoading = status === "submitted" || status === "streaming";
 
+  /*
+   * HYDRATE FROM DB
+   */
+  useEffect(() => {
+    if (
+      initialMessages &&
+      initialMessages.length > 0 &&
+      !hasSetInitialRef.current
+    ) {
+      hasSetInitialRef.current = true;
+      const formatted = dbMessagesToUIMessages(initialMessages);
+      setMessages(formatted);
+      // Mark these as saved so we don't try to save them again
+      initialMessages.forEach((m) => savedMessagesRef.current.add(m.id));
+    }
+  }, [initialMessages, setMessages]);
+
+  /*
+   * AUTO SCROLL
+   */
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
+  /*
+   * ✅ PERSIST ASSISTANT MESSAGE AFTER STREAMING FINISHES
+   */
+  useEffect(() => {
+    if (!currentChatId) return;
+    if (status !== "ready") return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return;
+    if (lastMessage.role !== "assistant") return;
+    if (savedMessagesRef.current.has(lastMessage.id)) return;
+
+    const parts = lastMessage.parts ?? [];
+
+    const textContent = parts
+      .filter((p: any) => p.type === "text")
+      .map((p: any) => p.text)
+      .join("");
+
+    const toolParts = parts.filter(
+      (p: any) =>
+        p.type.startsWith("tool-") ||
+        p.type === "tool-invocation"
+    );
+
+    const toolInvocationsJson =
+      toolParts.length > 0 ? JSON.stringify(toolParts) : undefined;
+
+    savedMessagesRef.current.add(lastMessage.id);
+
+    saveMessage(
+      currentChatId,
+      "assistant",
+      textContent,
+      toolInvocationsJson
+    );
+  }, [messages, status, currentChatId]);
+
+  /*
+   * AUTO SEND PENDING MESSAGE
+   */
+  useEffect(() => {
+    if (!pendingMessage || hasSentPendingRef.current) return;
+    hasSentPendingRef.current = true;
+
+    const autoSend = async () => {
+      try {
+        const newChat = await createChat(pendingMessage.slice(0, 100));
+        const chatId = newChat.id;
+
+        setCurrentChatId(chatId);
+
+        await saveMessage(chatId, "user", pendingMessage);
+        await updateChatTitle(chatId, pendingMessage.slice(0, 100));
+
+        onChatCreated?.(chatId);
+
+        sendMessage({ text: pendingMessage });
+      } catch (err) {
+        console.error("Auto-send failed:", err);
+        hasSentPendingRef.current = false;
+      }
+    };
+
+    autoSend();
+  }, [pendingMessage, sendMessage, onChatCreated]);
+
+  /*
+   * NORMAL SUBMIT
+   */
   const handleFormSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!input.trim() || isLoading) return;
 
+      const userInput = input;
       let activeChatId = currentChatId;
 
-      if (!activeChatId && !chatCreatedRef.current) {
-        chatCreatedRef.current = true;
+      if (!activeChatId) {
         try {
-          const newChat = await createChat(input.slice(0, 100));
+          const newChat = await createChat(userInput.slice(0, 100));
           activeChatId = newChat.id;
           setCurrentChatId(newChat.id);
           onChatCreated?.(newChat.id);
         } catch {
-          chatCreatedRef.current = false;
           return;
         }
       }
 
-      if (activeChatId) {
-        await saveMessage(activeChatId, "user", input);
+      await saveMessage(activeChatId, "user", userInput);
+
+      if (messages.length === 0) {
+        await updateChatTitle(activeChatId, userInput.slice(0, 100));
       }
 
-      if (activeChatId && messages.length === 0) {
-        await updateChatTitle(activeChatId, input.slice(0, 100));
-      }
-
-      sendMessage({ text: input });
+      sendMessage({ text: userInput });
       setInput("");
     },
-    [currentChatId, input, messages.length, onChatCreated, sendMessage, isLoading]
+    [
+      currentChatId,
+      input,
+      messages.length,
+      onChatCreated,
+      sendMessage,
+      isLoading,
+    ]
   );
+
+  const showWelcome =
+    messages.length === 0 && !pendingMessage && !initialMessages?.length;
 
   return (
     <div className="flex h-full flex-col">
-      {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
+        {showWelcome ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
               <Bot className="h-8 w-8 text-primary" />
             </div>
+
             <div className="text-center">
-              <h2 className="text-xl font-semibold">How can I help you today?</h2>
+              <h2 className="text-xl font-semibold">
+                How can I help you today?
+              </h2>
               <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                I can check the weather, look up F1 race schedules, and fetch stock
-                prices. Ask me anything!
+                Ask me anything.
               </p>
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              {[
-                "What's the weather in Tokyo?",
-                "When is the next F1 race?",
-                "What's Apple's stock price?",
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => setInput(suggestion)}
-                  className="rounded-lg border bg-background px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
-                >
-                  {suggestion}
-                </button>
-              ))}
             </div>
           </div>
         ) : (
@@ -171,7 +232,6 @@ export function ChatInterface({
         )}
       </div>
 
-      {/* Error Display */}
       {error && (
         <div className="mx-4 mb-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
           <p className="text-sm text-destructive">
@@ -180,7 +240,6 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Input Area */}
       <ChatInput
         input={input}
         onInputChange={setInput}

@@ -1,67 +1,139 @@
+// FILE: app/chat/chat-page-client.tsx
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useChatStore } from "@/store/chat-store";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { ChatInterface } from "@/components/chat/chat-interface";
 import { UserMenu } from "@/components/auth/user-menu";
-import { getChatWithMessages, getUserChats } from "@/actions/chat";
 import { Bot } from "lucide-react";
-import type { Chat, Message as DBMessage } from "@/db/schema";
+import { getChatWithMessages } from "@/actions/chat";
+import type { Message as DBMessage } from "@/db/schema";
 
-interface ChatPageClientProps {
-  initialChats: Chat[];
-}
+type PageMode = "loading" | "new" | "existing";
 
-/**
- * Client component for the chat page.
- * Manages chat selection, sidebar state, and renders the chat interface.
- * This is the CSR part - handles all interactive elements.
- */
-export function ChatPageClient({ initialChats }: ChatPageClientProps) {
-  const [chats, setChats] = useState<Chat[]>(initialChats);
-  const [activeChatId, setActiveChatId] = useState<string | undefined>();
-  const [activeMessages, setActiveMessages] = useState<DBMessage[]>([]);
-  const [chatKey, setChatKey] = useState(0);
+export function ChatPageClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const chatIdFromUrl = searchParams.get("id");
 
-  // Refresh chat list from server
-  const refreshChats = useCallback(async () => {
-    const updatedChats = await getUserChats();
-    setChats(updatedChats);
-  }, []);
+  const pendingMessage = useChatStore((s) => s.pendingMessage);
+  const clearPendingMessage = useChatStore((s) => s.clearPendingMessage);
 
-  // Select and load a chat
-  const handleSelectChat = useCallback(async (chatId: string) => {
-    const chatData = await getChatWithMessages(chatId);
-    if (chatData) {
-      setActiveChatId(chatData.id);
-      setActiveMessages(chatData.messages);
-      setChatKey((prev) => prev + 1); // Force re-mount of ChatInterface
-    }
-  }, []);
+  const [mode, setMode] = useState<PageMode>("loading");
+  const [activeChatId, setActiveChatId] = useState<string | undefined>(
+    chatIdFromUrl || undefined
+  );
+  const [initialMessages, setInitialMessages] = useState<
+    DBMessage[] | undefined
+  >(undefined);
 
-  // Start a new chat
-  const handleNewChat = useCallback(() => {
-    setActiveChatId(undefined);
-    setActiveMessages([]);
-    setChatKey((prev) => prev + 1);
-  }, []);
+  // Track whether we created this chat ourselves (to avoid re-fetching
+  // when window.history.replaceState updates the URL).
+  const selfCreatedRef = useRef(false);
 
-  // When a chat is created from the interface, update sidebar
+  // Sidebar refresh counter — increment to trigger sidebar refetch
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+
+  // ─── Initialization: decide mode based on Zustand / URL param ───
+  useEffect(() => {
+    // If we just created a chat via pending message flow, don't re-fetch
+    if (selfCreatedRef.current) return;
+
+    const init = async () => {
+      setMode("loading");
+
+      // CASE 1: Pending message from "/" home page → new chat flow
+      if (pendingMessage && !chatIdFromUrl) {
+        setActiveChatId(undefined);
+        setInitialMessages(undefined);
+        setMode("new");
+        console.log("")
+        return;
+      }
+
+      // CASE 2: Chat ID in URL → load messages from DB
+      if (chatIdFromUrl) {
+        try {
+          const chatData = await getChatWithMessages(chatIdFromUrl);
+          if (chatData && chatData.messages) {
+            setActiveChatId(chatData.id);
+            setInitialMessages(chatData.messages);
+            setMode("existing");
+            console.log("chatData", chatData);
+            return;
+          }
+        } catch {
+          // Chat not found or error — fall through to redirect
+        }
+        // Chat doesn't exist → go home
+        router.replace("/");
+        return;
+      }
+
+      // CASE 3: No pending message, no chat ID → redirect home
+      router.replace("/");
+    };
+
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatIdFromUrl]);
+
+  // ─── Called by ChatInterface after it creates a session for the pending message ───
   const handleChatCreated = useCallback(
-    async (chatId: string) => {
+    (chatId: string) => {
+      selfCreatedRef.current = true;
       setActiveChatId(chatId);
-      await refreshChats();
+      // Update URL without triggering Next.js navigation/re-render
+      window.history.replaceState(null, "", `/chat?id=${chatId}`);
+      // Clear Zustand — the message has been consumed
+      clearPendingMessage();
+      // Refresh sidebar so the new chat appears
+      setSidebarRefreshKey((k) => k + 1);
     },
-    [refreshChats]
+    [clearPendingMessage]
   );
 
-  // Refresh chats when activeChatId changes to keep sidebar in sync
-  useEffect(() => {
-    if (activeChatId) {
-      refreshChats();
-    }
-  }, [activeChatId, refreshChats]);
+  // ─── Sidebar: select an existing chat ───
+  const handleSelectChat = useCallback(
+    (chatId: string) => {
+      if (chatId === activeChatId) return;
 
+      // Reset everything for a clean load
+      selfCreatedRef.current = false;
+      setMode("loading");
+      setActiveChatId(undefined);
+      setInitialMessages(undefined);
+      clearPendingMessage();
+
+      // Navigate — this changes searchParams which triggers our useEffect
+      router.push(`/chat?id=${chatId}`);
+    },
+    [activeChatId, clearPendingMessage, router]
+  );
+
+  // ─── Sidebar: new chat ───
+  const handleNewChat = useCallback(() => {
+    clearPendingMessage();
+    router.push("/");
+  }, [clearPendingMessage, router]);
+
+  // ─── Sidebar: after deleting a chat ───
+  const handleDeleteChat = useCallback(() => {
+    setSidebarRefreshKey((k) => k + 1);
+  }, []);
+
+  // ─── Loading state ───
+  if (mode === "loading") {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  // ─── Render ───
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
@@ -73,24 +145,31 @@ export function ChatPageClient({ initialChats }: ChatPageClientProps) {
         <UserMenu />
       </header>
 
-      {/* Main Content */}
+      {/* Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - Chat History */}
         <ChatSidebar
-          chats={chats}
+          key={sidebarRefreshKey}
           activeChatId={activeChatId}
           onSelectChat={handleSelectChat}
           onNewChat={handleNewChat}
+          onDeleteChat={handleDeleteChat}
         />
 
-        {/* Chat Interface */}
         <div className="flex-1">
-          <ChatInterface
-            key={chatKey}
-            chatId={activeChatId}
-            initialMessages={activeMessages}
-            onChatCreated={handleChatCreated}
-          />
+          {mode === "new" ? (
+            <ChatInterface
+              key="new-chat"
+              pendingMessage={pendingMessage ?? undefined}
+              onChatCreated={handleChatCreated}
+            />
+          ) : (
+            <ChatInterface
+              key={activeChatId || "existing"}
+              chatId={activeChatId}
+              initialMessages={initialMessages}
+              onChatCreated={handleChatCreated}
+            />
+          )}
         </div>
       </div>
     </div>

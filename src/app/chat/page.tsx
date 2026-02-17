@@ -1,27 +1,32 @@
+// FILE: app/chat/page.tsx
+// The "/chat" route — handles both new chats (from Zustand) and
+// existing chats (from ?id= query param).
+// DELETE the old app/chat/[chatId]/page.tsx — no longer needed.
+
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getUserChats } from "@/actions/chat";
+import { Suspense } from "react";
 import { ChatPageClient } from "./chat-page-client";
 
-/**
- * Protected chat page - Server-Side Rendered shell.
- *
- * SSR: Authentication check and initial chat history fetch happen server-side.
- * CSR: The interactive chat interface (ChatPageClient) handles real-time
- *      messaging, tool calling, and dynamic chat selection on the client.
- *
- * This demonstrates the SSR + CSR mix:
- * - Server: Auth guard, initial data fetching (chat history)
- * - Client: Real-time AI streaming, tool rendering, interactive UI
- */
+export const dynamic = "force-dynamic";
+
 export default async function ChatPage() {
   const session = await auth();
   if (!session?.user) {
     redirect("/login");
   }
 
-  // Server-side: fetch user's chat history
-  const chats = await getUserChats();
+  return (
+    <Suspense fallback={<ChatLoading />}>
+      <ChatPageClient />
+    </Suspense>
+  );
+}
 
-  return <ChatPageClient initialChats={chats} />;
+function ChatLoading() {
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+    </div>
+  );
 }

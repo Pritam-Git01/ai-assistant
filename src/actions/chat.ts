@@ -67,7 +67,7 @@ export async function createChat(title?: string) {
     })
     .returning();
 
-  revalidatePath("/chat");
+  revalidatePath("/chat", "layout");
   return newChat;
 }
 
@@ -118,7 +118,7 @@ export async function updateChatTitle(chatId: string, title: string) {
     .set({ title: title.slice(0, 100) })
     .where(eq(chats.id, chatId));
 
-  revalidatePath("/chat");
+  revalidatePath("/chat", "layout");
 }
 
 /**
@@ -132,5 +132,5 @@ export async function deleteChat(chatId: string) {
 
   await db.delete(chats).where(eq(chats.id, chatId));
 
-  revalidatePath("/chat");
+  revalidatePath("/chat", "layout");
 }
